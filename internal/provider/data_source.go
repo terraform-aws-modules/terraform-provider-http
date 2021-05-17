@@ -79,28 +79,6 @@ func dataSourceRead(ctx context.Context, d *schema.ResourceData, meta interface{
 	headers := d.Get("request_headers").(map[string]interface{})
 	caCert := d.Get("ca_certificate").(string)
 	timeout := d.Get("timeout").(int)
-	caCert := d.Get("ca_certificate").(string)
-
-	// Get the System Cert Pool
-	caCertPool, err := x509.SystemCertPool()
-	if err != nil {
-		return append(diags, diag.Errorf("Error tls: %s", err)...)
-	}
-
-	// Use `ca_certificate` cert pool
-	if caCert != "" {
-		caCertPool = x509.NewCertPool()
-		if ok := caCertPool.AppendCertsFromPEM([]byte(caCert)); !ok {
-			return append(diags, diag.Errorf("Error tls: Can't add the CA certificate to certificate pool")...)
-		}
-	}
-
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			RootCAs:            caCertPool,
-			InsecureSkipVerify: d.Get("insecure").(bool),
-		},
-	}
 
 	// Get the System Cert Pool
 	caCertPool, err := x509.SystemCertPool()
