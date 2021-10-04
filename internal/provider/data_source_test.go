@@ -4,14 +4,14 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"github.com/hashicorp/go-uuid"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
-
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
 type TestHttpMock struct {
@@ -423,6 +423,36 @@ func TestDataSource_utf8_TLS_insecure(t *testing.T) {
 
 					return nil
 				},
+			},
+		},
+	})
+}
+
+const testDataSourceConfig_wait_for_dns = `
+data "http" "http_test" {
+  url = "http://%s.com"
+  wait_for_dns = true
+  timeout = %d
+}
+
+output "body" {
+  value = "${data.http.http_test.body}"
+}
+`
+
+func TestDataSource_wait_for_dns(t *testing.T) {
+
+	hostNotFound, err := uuid.GenerateUUID()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resource.UnitTest(t, resource.TestCase{
+		Providers: testProviders,
+		Steps: []resource.TestStep{
+			{
+				Config:      fmt.Sprintf(testDataSourceConfig_wait_for_dns, hostNotFound, 10),
+				ExpectError: regexp.MustCompile("(?m)^.*Timeout waiting for DNS update.*"),
 			},
 		},
 	})

@@ -70,6 +70,12 @@ func dataSource() *schema.Resource {
 				Optional: true,
 				Default:  false,
 			},
+
+			"wait_for_dns": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Default:  false,
+			},
 		},
 	}
 }
@@ -79,6 +85,7 @@ func dataSourceRead(ctx context.Context, d *schema.ResourceData, meta interface{
 	headers := d.Get("request_headers").(map[string]interface{})
 	caCert := d.Get("ca_certificate").(string)
 	timeout := d.Get("timeout").(int)
+	waitForDns := d.Get("wait_for_dns").(bool)
 
 	tr := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
@@ -87,33 +94,52 @@ func dataSourceRead(ctx context.Context, d *schema.ResourceData, meta interface{
 		},
 	}
 
-	// Use `ca_certificate` cert pool
-	if caCert != "" {
-		caCertPool := x509.NewCertPool()
-		if ok := caCertPool.AppendCertsFromPEM([]byte(caCert)); !ok {
-			return append(diags, diag.Errorf("Error tls: Can't add the CA certificate to certificate pool")...)
+	timeoutDuration := time.Duration(timeout) * time.Second // defaults to 0
+	withTimeout, cancel := context.WithTimeout(ctx, timeoutDuration)
+	defer cancel()
+
+	var resp *http.Response
+	for {
+		// Use `ca_certificate` cert pool
+		if caCert != "" {
+			caCertPool := x509.NewCertPool()
+			if ok := caCertPool.AppendCertsFromPEM([]byte(caCert)); !ok {
+				return append(diags, diag.Errorf("Error tls: Can't add the CA certificate to certificate pool")...)
+			}
+
+			tr.TLSClientConfig.RootCAs = caCertPool
 		}
 
-		tr.TLSClientConfig.RootCAs = caCertPool
-	}
+		client := &http.Client{
+			Transport: tr,
+			Timeout:   timeoutDuration,
+		}
 
-	client := &http.Client{
-		Transport: tr,
-		Timeout:   time.Duration(timeout) * time.Second, // defaults to 0
-	}
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return append(diags, diag.Errorf("Error creating request: %s", err)...)
+		}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return append(diags, diag.Errorf("Error creating request: %s", err)...)
-	}
+		for name, value := range headers {
+			req.Header.Set(name, value.(string))
+		}
 
-	for name, value := range headers {
-		req.Header.Set(name, value.(string))
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return append(diags, diag.Errorf("Error making request: %s", err)...)
+		resp, err = client.Do(req)
+		if err != nil {
+			if waitForDns && strings.Index(err.Error(), "no such host") >= 0 {
+				select {
+				case <-withTimeout.Done():
+					// timed out
+					return append(diags, diag.Errorf("Timeout waiting for DNS update")...)
+				default:
+					// delay and try again
+					time.Sleep(time.Second * 3)
+					continue
+				}
+			}
+			return append(diags, diag.Errorf("Error making request: %s", err)...)
+		}
+		break
 	}
 
 	defer resp.Body.Close()
