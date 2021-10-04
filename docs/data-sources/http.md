@@ -48,6 +48,8 @@ The following arguments are supported:
 
 * `timeout` - (Optional) Client timeout in seconds
 
+* `wait_for_dns` - (Optional) Whether to wait for the DNS record to be added for the host
+
 ## Attributes Reference
 
 The following attributes are exported:
