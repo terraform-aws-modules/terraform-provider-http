@@ -70,6 +70,15 @@ func dataSource() *schema.Resource {
 				Optional: true,
 				Default:  false,
 			},
+
+			"exclude_response_headers": {
+				Type:     schema.TypeList,
+				Optional: true,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
+				Description: "List of response headers that should be ignored",
+			},
 		},
 	}
 }
@@ -137,9 +146,13 @@ func dataSourceRead(ctx context.Context, d *schema.ResourceData, meta interface{
 	}
 
 	responseHeaders := make(map[string]string)
+	excludedHeaders := d.Get("exclude_response_headers").([]interface{})
 	for k, v := range resp.Header {
 		// Concatenate according to RFC2616
 		// cf. https://www.w3.org/Protocols/rfc2616/rfc2616-sec4.html#sec4.2
+		if stringInSlice(k, excludedHeaders) {
+			continue
+		}
 		responseHeaders[k] = strings.Join(v, ", ")
 	}
 
@@ -177,5 +190,14 @@ func isContentTypeText(contentType string) bool {
 		}
 	}
 
+	return false
+}
+
+func stringInSlice(a string, list []interface{}) bool {
+	for _, b := range list {
+		if b.(string) == a {
+			return true
+		}
+	}
 	return false
 }
